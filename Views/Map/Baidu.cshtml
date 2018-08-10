@@ -1,0 +1,277 @@
+﻿@{
+    ViewData["Title"] ="Home Page";
+}
+<div id="map">
+</div>
+
+<script type="text/javascript">
+    var markerArr = @Html.Raw(ViewBag.OvLayList);
+
+        var map; //Map实例
+        var myGeo;//地址解析
+        var geoPoint;
+        var myZoomLevel = 12;
+        var addressString ="";
+
+        var marker_right = new Array();
+
+        function map_init() {
+            map = new BMap.Map("map");
+            //geoPoint = new BMap.Point(0, 0);
+            geoPoint = new BMap.Point(0,0);
+
+            // 创建地址解析器实例
+            myGeo = new BMap.Geocoder();
+            //第1步：设置地图116.409, 39.93
+            var point = new BMap.Point(116.409, 39.93);
+            var point_EditInit = new BMap.Point(@ViewBag.InitLng, @ViewBag.InitLat);
+
+            //第2步：初始化地图,设置中心点坐标和地图级别。
+            map.centerAndZoom(point, 4);
+
+            //第3步：启用滚轮放大缩小
+            map.enableScrollWheelZoom(true);
+
+            //启用键盘上下左右移动地图
+            map.enableKeyboard();
+
+            //第4步：向地图中添加缩放控件
+            var ctrlNav = new window.BMap.NavigationControl({
+                anchor: BMAP_ANCHOR_TOP_LEFT,
+                type: BMAP_NAVIGATION_CONTROL_LARGE
+            });
+            map.addControl(ctrlNav);
+
+            //第5步：向地图中添加缩略图控件
+            var ctrlOve = new window.BMap.OverviewMapControl({
+                anchor: BMAP_ANCHOR_BOTTOM_RIGHT,
+                isOpen: 1
+            });
+            map.addControl(ctrlOve);
+
+            //第6步：向地图中添加比例尺控件
+            var ctrlSca = new window.BMap.ScaleControl({
+                anchor: BMAP_ANCHOR_BOTTOM_LEFT
+            });
+            map.addControl(ctrlSca);
+            // -------------------------------------------------------------
+            // 将地址解析结果显示在地图上,并调整地图视野
+            myGeo.getPoint("@Html.Raw(ViewBag.Address)", function (_point) {
+                if (_point) {
+                    geoPoint = _point;
+                    map.centerAndZoom(geoPoint, myZoomLevel);
+                    // ******** 添加 BMap.Marker （红点） ********
+                    //map.clearOverlays();
+                    addressString ="@Html.Raw(ViewBag.Address)";
+                    var diyMarker = new BMap.Marker(_point);
+                    diyMarker.setTitle("@Html.Raw(ViewBag.Address)");
+
+                    var label = new BMap.Label("@Html.Raw(ViewBag.Address)", { offset: new BMap.Size(20, -10) });
+                    diyMarker.setLabel(label);
+                    map.addOverlay(diyMarker);
+                    // ******** End of 添加 BMap.Marker （红点） ********
+                    //根据查询出来的坐标，查找对应地址信息
+                    myGeo.getLocation(_point, function (rs) {
+                        if (!!rs.addressComponents) {
+                            var addComp = rs.addressComponents; // addressComponents 有多个属性 // 省（Province）；市（City）；区
+                            addressString = addComp.city + addComp.district + addComp.street + addComp.streetNumber;
+                            setLongitudeAndLatitude()
+                        }
+                    });
+
+                } else {
+                    alert("警告：您输入的街道没有解析到结果。");
+                    geoPoint ="";
+                }
+            },"@Html.Raw(ViewBag.City)");
+            //初始化一个坐标 并 移动 到该 信息 用于显示 初始坐标点
+            //MoveToPoint(lng, lat)  BMap.Point(0, 0)
+            myGeo.getLocation(point_EditInit, function (rs) {
+                if (!!rs.addressComponents) {
+                    var addComp = rs.addressComponents; // addressComponents 有多个属性 // 省（Province）；市（City）；区（District）；街（Street）；房号（StreetNumber）
+                    if(point_EditInit.lng<0 && point_EditInit.lat<0){
+                        return;
+                    }
+
+                    var diyMarker = new BMap.Marker(point_EditInit); // 创建百度地图红点
+
+                    addressString = addComp.city + addComp.district + addComp.street + addComp.streetNumber;
+
+                    diyMarker.setTitle(addressString);
+
+                    var label = new BMap.Label(addressString, { offset: new BMap.Size(20, -10) }); //
+                    diyMarker.setLabel(label);
+
+                    map.addOverlay(diyMarker);
+
+                    MoveToPoint(point_EditInit.lng,point_EditInit.lat);
+                    geoPoint = point_EditInit;
+                    //marker_right.push(diyMarker);
+                    //setLongitudeAndLatitude()
+                    setLongitudeAndLatitude()
+                }
+            });
+            //第七步：添加单击事件
+            map.addEventListener("rightclick", function (e) {
+                //map.clearOverlays();
+                removeRightOverlay();
+                var pt = e.point;
+                myGeo.getLocation(pt, function (rs) {
+                    if (!!rs.addressComponents) {
+                        var addComp = rs.addressComponents; // addressComponents 有多个属性 // 省（Province）；市（City）；区（District）；街（Street）；房号（StreetNumber）
+                        geoPoint = pt;
+                        var diyMarker = new BMap.Marker(pt); // 创建百度地图红点
+
+                        addressString = addComp.city + addComp.district + addComp.street + addComp.streetNumber;
+                        diyMarker.setTitle(addressString);
+
+                        var label = new BMap.Label(addressString, { offset: new BMap.Size(20, -10) }); //
+                        diyMarker.setLabel(label);
+
+                        map.addOverlay(diyMarker);
+                        marker_right.push(diyMarker);
+                        //setLongitudeAndLatitude()
+                        setLongitudeAndLatitude()
+                    }
+                });
+            });
+
+
+            //第7步多点标注
+            var point_arr = new Array(); //存放标注点经纬信息的数组
+            var marker_arr = new Array(); //存放标注点对象的数组
+            var info = new Array(); //存放提示信息窗口对象的数组
+            for (var i = 0; i < markerArr.length; i++) {
+                var myIcon = new BMap.Icon("http://api.map.baidu.com/img/markers.png",
+               new BMap.Size(23, 25), {
+                   offset: new BMap.Size(10, 25),
+                   imageOffset: new BMap.Size(0, 0 - 0 * 25)
+               });
+                var p0 = markerArr[i].point.split(",")[0]; //
+                var p1 = markerArr[i].point.split(",")[1]; //按照原数组的point格式将地图点坐标的经纬度分别提出来
+                point_arr[i] = new window.BMap.Point(p0, p1); //循环生成新的地图点
+                marker_arr[i] = new window.BMap.Marker(point_arr[i],{icon :myIcon}); //按照地图点坐标生成标记
+                map.addOverlay(marker_arr[i]);
+                
+                addMarker(p0,p1,0,markerArr[i].title,markerArr[i].address);
+
+                
+            }
+        }
+
+        //清除覆盖物
+        function removeOverlay() {
+            map.clearOverlays();
+        }
+        //清除 右键 气泡
+        function removeRightOverlay() {
+            for (var i = 0; i < marker_right.length; i++) {
+                map.removeOverlay(marker_right[i]);
+            }
+        }
+        //移动到某一点
+        function MoveToPoint(lng, lat) {
+            map.panTo(new BMap.Point(lng, lat));
+        }
+
+        // 添加标注
+        //title标题
+        //des为描述
+        function addMarker(lng, lat, index, title, des) {
+
+            //标注图标
+            var myIcon = new BMap.Icon("http://api.map.baidu.com/img/markers.png",
+                new BMap.Size(23, 25), {
+                    offset: new BMap.Size(10, 25),
+                    imageOffset: new BMap.Size(0, 0 - index * 25)
+                });
+            var point = new BMap.Point(lng, lat);
+            var marker = new BMap.Marker(point, { icon: myIcon });
+            map.addOverlay(marker);
+
+            ////跳动的动画
+            // marker.setAnimation(BMAP_ANIMATION_BOUNCE);
+
+            //根据坐标点，获取详细地址信息
+            if (myGeo == null)
+                myGeo = new BMap.Geocoder();
+            myGeo.getLocation(point, function (res) {
+                if (res == null)
+                    //设置点击详细信息
+                    addInfoWindow(marker, title, des);
+                else
+                    //addInfoWindow(marker, res.address, res.business);
+                    addInfoWindow(marker, title, des);
+            });
+            return marker;
+        }
+
+
+
+
+
+
+        // 添加信息窗口
+        function addInfoWindow(marker, title, des) {
+            //alert(title);
+            //title = '锅炉1号 购买人A';
+            //标签
+            var label = new BMap.Label(title, { offset: new BMap.Size(20, -10) });
+            //marker.setLabel(label);
+
+            //pop弹窗标题
+            var title = '<div style="font-weight:bold;color:#CE5521;font-size:14px"><a style="text-decoration:none;font-weight:bold;color:#CE5521;font-size:14px" href="javascript:setBoilerInfo(\''+title+'\')">' + title + '</a></div>';
+            //pop弹窗信息
+            var html = [];
+            html.push('<table cellspacing="0" style="table-layout:fixed;width:100%;font:12px arial,simsun,sans-serif"><tbody>');
+            html.push('<tr>');
+            html.push('<td style="vertical-align:top;line-height:16px;width:48px;white-space:nowrap;word-break:keep-all">详细信息:</td>');
+            html.push('<td style="vertical-align:top;line-height:16px">' + des + ' </td>');
+            html.push('</tr>');
+            html.push('</tbody></table>');
+            var infoWindow = new BMap.InfoWindow(html.join(""), { title: title, width: 200 });
+
+            var openInfoWinFun = function () {
+                marker.openInfoWindow(infoWindow);
+            };
+            marker.addEventListener("click", openInfoWinFun);
+            return openInfoWinFun;
+        }
+        ///返回给程序后台
+        // 获取地址信息
+        function setAddress()
+        {
+            if (!!addressString) {
+                //window.external.SetAddress("");
+            }
+            else {
+                alert("警告：请点击地图获取设置查询地点。");
+            }
+        }
+        // 获取经纬度信息
+        function setLongitudeAndLatitude()
+        {
+            if (!!geoPoint) {
+                window.external.SetLongitudeAndLatitude(geoPoint.lng, geoPoint.lat, addressString);
+            }
+            else {
+                alert("警告：请点击地图获取设置查询地点。");
+            }
+        }
+        //回调后台 选择显示指定锅炉信息
+        function setBoilerInfo(boilerID){
+            //alert(boilerID);
+            if (!!boilerID) {
+                window.external.setBoilerInfo(boilerID);
+            }else{
+                alert("未选择锅炉信息");
+            }
+        }
+        //异步调用百度js
+        function map_load() {
+            var load = document.createElement("script");
+            load.src ="http://api.map.baidu.com/api?v=2.0&callback=map_init&ak=eqPZV35edaZZGefOIopjLNqTSj4qI89Y";
+            document.body.appendChild(load);
+        }
+        window.onload = map_load;
+</script>
